@@ -1,0 +1,41 @@
+tools:
+  - class_name: "recipe.feedback_rl.feedback_tool.SelfInPerfectFeedbackTool"
+    config:
+      # vLLM server configuration - supports multiple servers for load balancing
+      # Requests are randomly distributed across all servers for faster feedback generation
+      vllm_url:
+        - "http://h03:1233/v1/chat/completions"
+        - "http://h02:1233/v1/chat/completions"
+      feedback_model: "meta-llama/Llama-4-Scout-17B-16E-Instruct"
+      temperature: 0.0  # feedback_temp = 0.0 from Self-InPerfect
+      max_tokens: 8192  # Increased to match max_tool_response_length and allow complete explanations
+      timeout: 600  # 10 minutes timeout for feedback generation
+      n: 1  # n = 1 from Self-InPerfect
+      type: native  # Required for tool agent
+
+      # Additional vLLM parameters matching Self-InPerfect
+      best_of: 1
+      seed: 14  # seed: 14 from Self-InPerfect
+
+      # Dataset configuration (can be overridden per experiment)
+      dataset: "math"  # Options: math, mmlu, mmlu_pro, gpqa, trivia_qa, gsm8k, etc.
+
+      # Feedback settings from Self-InPerfect
+      use_process_feedback: true  # Include correct reasoning process
+      shuffle: false  # Set true for MCQ shuffling experiments
+
+    tool_schema:
+      type: "function"
+      function:
+        name: "get_feedback"
+        description: "Get feedback on your current answer from an expert assistant. The feedback will guide you toward the correct solution without revealing the answer."
+        parameters:
+          type: "object"
+          properties:
+            current_answer:
+              type: "string"
+              description: "Your current answer to the problem"
+            reasoning:
+              type: "string"
+              description: "Your reasoning process for arriving at the answer (optional)"
+          required: ["current_answer"]

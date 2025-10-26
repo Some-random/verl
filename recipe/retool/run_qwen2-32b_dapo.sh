@@ -1,16 +1,16 @@
 set -x
 
 # ================= data/model/tool =================
-HDFS_ROOT=${HDFS_ROOT:-$PWD}
-DATA_ROOT=${DATA_ROOT:-$PWD}
+HDFS_ROOT=/workspace/verl/verl_code_base
+DATA_ROOT=/workspace/verl/verl_code_base/data
 
 dapo_math_17k=$DATA_ROOT/dataset/BytedTsinghua-SIA/DAPO-Math-17k
-aime_2024=$DATA_ROOT/dataset/Maxwell-Jia/AIME_2024
+aime_2024=$DATA_ROOT/dataset/BytedTsinghua-SIA/AIME_2024
 aime_2025=$DATA_ROOT/dataset/yentinglin/aime_2025
-model_path=$HDFS_ROOT/checkpoint/multiturn-sft-qwen-2.5-32b-instruct/global_step_372
+model_path=$HDFS_ROOT/checkpoint/multiturn-sft-qwen-2.5-32b-instruct/global_step_372/huggingface
 
 train_files="['$dapo_math_17k']"
-test_files="['$aime_2025']"
+test_files="['$aime_2024']"
 
 # tool
 tool_config_path=recipe/retool/sandbox_fusion_tool_config.yaml
@@ -37,13 +37,13 @@ max_response_length=16384
 actor_lr=1e-6
 
 train_batch_size=512
-ppo_mini_batch_size=64
-n_resp_per_prompt=16
-n_resp_per_prompt_val=30
+ppo_mini_batch_size=16
+n_resp_per_prompt=4
+n_resp_per_prompt_val=7
 
 # ================= perfomance =================
-infer_tp=4 # vllm
-train_sp=8 # train
+infer_tp=1 # vllm
+train_sp=2 # train
 offload=True
 
 actor_max_token_len_per_gpu=$(( (max_prompt_length + max_response_length) * 1 ))
@@ -97,10 +97,10 @@ python3 -m verl.trainer.main_ppo \
     trainer.logger=['console','wandb'] \
     trainer.project_name=$project_name \
     trainer.experiment_name=$experiment_name \
-    trainer.n_gpus_per_node=8 \
+    trainer.n_gpus_per_node=4 \
     trainer.val_before_train=True \
     trainer.log_val_generations=100 \
-    trainer.nnodes=2 \
+    trainer.nnodes=1 \
     trainer.save_freq=30 \
     trainer.default_local_dir=$default_local_dir \
     trainer.test_freq=5 \

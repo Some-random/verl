@@ -483,6 +483,7 @@ class AgentLoopWorker:
         agent_name: str,
         **kwargs,
     ) -> _InternalAgentLoopOutput:
+        # breakpoint()
         with rollout_trace_attr(
             step=trajectory["step"],
             sample_index=trajectory["sample_index"],

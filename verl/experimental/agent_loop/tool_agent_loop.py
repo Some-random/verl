@@ -69,6 +69,7 @@ class AgentData:
         self.response_logprobs: list[float] = []
         self.turn_scores: list[float] = []
         self.tool_rewards: list[float] = []
+        self.tool_call_count = 0  # Track actual number of tool executions
         self.user_turns = 0
         self.assistant_turns = 0
 
@@ -117,7 +118,27 @@ class ToolAgentLoop(AgentLoopBase):
         image_data = copy.deepcopy(kwargs.get("multi_modal_data", {}).get("image", None))
         metrics = {}
         request_id = uuid4().hex
+
+        # breakpoint()
+        # Try to get tools_kwargs from the standard pipeline
         tools_kwargs = kwargs.get("tools_kwargs", {})
+
+        # If empty, build it directly from kwargs data (fallback for custom datasets)
+        if not tools_kwargs and "get_feedback" in [tool.name for tool in self.tools.values()]:
+            reward_model = kwargs.get("reward_model", {})
+            ground_truth = reward_model.get("ground_truth", "")
+            question = messages[0]["content"] if messages else ""
+            data = kwargs.get("original_data", {})
+
+            tools_kwargs = {
+                "get_feedback": {
+                    "create_kwargs": {
+                        "ground_truth": ground_truth,
+                        "question": question,
+                        "data": data
+                    }
+                }
+            }
 
         # Initialize interaction if needed
         interaction = None
@@ -176,7 +197,11 @@ class ToolAgentLoop(AgentLoopBase):
             metrics=agent_data.metrics,
             extra_fields={},
         )
-        output.extra_fields.update({"turn_scores": agent_data.turn_scores, "tool_rewards": agent_data.tool_rewards})
+        output.extra_fields.update({
+            "turn_scores": agent_data.turn_scores,
+            "tool_rewards": agent_data.tool_rewards,
+            "num_tool_calls": agent_data.tool_call_count  # Actual number of tool executions
+        })
         return output
 
     async def _handle_pending_state(self, agent_data: AgentData, sampling_params: dict[str, Any]) -> AgentState:
@@ -257,12 +282,15 @@ class ToolAgentLoop(AgentLoopBase):
 
     async def _handle_processing_tools_state(self, agent_data: AgentData) -> AgentState:
         """Handle the processing tools state: execute tool calls and prepare tool responses."""
+        # breakpoint()
         add_messages: list[dict[str, Any]] = []
         new_images_this_turn: list[Any] = []  # Local variable instead of agent_data attribute
 
         tasks = []
         for tool_call in agent_data.tool_calls[: self.max_parallel_calls]:
             tasks.append(self._call_tool(tool_call, agent_data.tools_kwargs))
+            # Increment tool call counter when we create the task (i.e., when we call the tool)
+            agent_data.tool_call_count += 1
 
         with simple_timer("tool_calls", agent_data.metrics):
             responses = await asyncio.gather(*tasks)
@@ -270,6 +298,7 @@ class ToolAgentLoop(AgentLoopBase):
         # Process tool responses and update multi_modal_data
         # Removed: agent_data.new_images_this_turn = []
         for tool_response, tool_reward, _ in responses:
+
             # Create message from tool response
             if tool_response.image or tool_response.video:
                 # Multi-modal content with structured format

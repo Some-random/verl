@@ -1,18 +1,21 @@
 #!/bin/bash
 set -x
 
-nnodes=2
-nproc_per_node=8
-master_addr=
-master_port=
+nnodes=1
+nproc_per_node=4
+
+# For single node, use localhost
+master_addr=localhost
+master_port=29500
+node_rank=0
 
 experiment_name=multiturn-sft-qwen-2.5-32b-instruct
-HDFS_ROOT=${HDFS_ROOT:-$PWD}
-DATA_ROOT=${DATA_ROOT:-$PWD}
+HDFS_ROOT=
+DATA_ROOT=/workspace/verl/verl_code_base/
 
-TRAIN_DATA=$DATA_ROOT/dataset/wuxibin/ReTool-SFT/data/train-00000-of-00001.parquet
-EVAL_DATA=$DATA_ROOT/dataset/wuxibin/ReTool-SFT/data/train-00000-of-00001.parquet
-MODEL_PATH=$HDFS_ROOT/model/Qwen2.5-32B-Instruct
+TRAIN_DATA=$DATA_ROOT/data/ReTool-SFT/data/train-00000-of-00001.parquet
+EVAL_DATA=$DATA_ROOT/data/ReTool-SFT/data/train-00000-of-00001.parquet
+MODEL_PATH=Qwen/Qwen2.5-7B-Instruct
 SAVE_PATH=$DATA_ROOT/checkpoint/$experiment_name
 
 torchrun --nnodes=$nnodes \

@@ -433,9 +433,20 @@ class RayPPOTrainer:
             if len(v) == n:
                 base_data[k] = v
 
+        # Helper to convert numpy types to Python types for JSON serialization
+        def convert_to_python_type(obj):
+            if isinstance(obj, (np.bool_, np.generic)):
+                return obj.item()
+            elif isinstance(obj, dict):
+                return {k: convert_to_python_type(v) for k, v in obj.items()}
+            elif isinstance(obj, (list, tuple)):
+                return [convert_to_python_type(item) for item in obj]
+            return obj
+
         lines = []
         for i in range(n):
             entry = {k: v[i] for k, v in base_data.items()}
+            entry = convert_to_python_type(entry)
             lines.append(json.dumps(entry, ensure_ascii=False))
 
         with open(filename, "w") as f:
@@ -515,6 +526,89 @@ class RayPPOTrainer:
             gen_batch.non_tensor_batch.update(batch.non_tensor_batch)
 
         return gen_batch
+
+    def _compute_feedback_metrics(self, val_data_dir):
+        """Compute detailed feedback usage metrics from validation outputs."""
+        from pathlib import Path
+        import re
+        from collections import defaultdict
+
+        def extract_boxed_answer(text):
+            matches = list(re.finditer(r'\\boxed\{([^}]+)\}', text))
+            if matches:
+                return matches[-1].group(1).strip()
+            return None
+
+        def normalize(s):
+            s = re.sub(r'\\text\{([^}]+)\}', r'\1', s)
+            return s.strip().lower()
+
+        # Find the latest validation file
+        val_path = Path(val_data_dir)
+        jsonl_file = val_path / f"{self.global_steps}.jsonl"
+
+        if not jsonl_file.exists():
+            return {}
+
+        # Categorize each example
+        overall_counts = defaultdict(int)
+
+        with open(jsonl_file) as f:
+            for line in f:
+                item = json.loads(line)
+                gt = item.get('gts', '')
+                output = item.get('output', '')
+
+                # Extract all answers
+                all_answers = []
+                segments = output.split('assistant\n')
+                for segment in segments:
+                    answer = extract_boxed_answer(segment)
+                    if answer:
+                        all_answers.append(answer)
+
+                if not all_answers:
+                    overall_counts['no_answer'] += 1
+                    continue
+
+                first_answer = all_answers[0]
+                final_answer = all_answers[-1]
+                num_feedback = output.count('<tool_call>')
+
+                first_correct = normalize(first_answer) == normalize(gt)
+                final_correct = normalize(final_answer) == normalize(gt)
+
+                # Categorize
+                if num_feedback == 0:
+                    if first_correct:
+                        overall_counts['correct_no_feedback'] += 1
+                    else:
+                        overall_counts['wrong_no_feedback'] += 1
+                else:
+                    if first_correct and final_correct:
+                        overall_counts['correct_with_feedback'] += 1
+                    elif not first_correct and final_correct:
+                        overall_counts['wrong_corrected'] += 1
+                    elif not first_correct and not final_correct:
+                        overall_counts['wrong_still_wrong'] += 1
+
+        # Compute metrics as lists (for compatibility with reward_extra_infos_dict format)
+        total = sum(overall_counts.values())
+        if total == 0:
+            return {}
+
+        # Return scalar metrics (not wrapped in lists)
+        usage = overall_counts['correct_with_feedback'] + overall_counts['wrong_corrected'] + overall_counts['wrong_still_wrong']
+        metrics = {
+            'feedback_usage_rate': 100 * usage / total,
+            'feedback_success_rate': 100 * overall_counts['wrong_corrected'] / max(1, overall_counts['wrong_corrected'] + overall_counts['wrong_still_wrong']),
+            'pct_wrong_corrected': 100 * overall_counts['wrong_corrected'] / total,
+            'pct_correct_with_feedback': 100 * overall_counts['correct_with_feedback'] / total,
+            'pct_wrong_still_wrong': 100 * overall_counts['wrong_still_wrong'] / total,
+        }
+
+        print(f"Feedback metrics: {metrics}")
+        return metrics
 
     def _validate(self):
         data_source_lst = []
@@ -628,6 +722,14 @@ class RayPPOTrainer:
                 dump_path=val_data_dir,
             )
 
+            # Store validation data dir for later feedback metrics computation
+            self._last_val_data_dir = val_data_dir
+
+            # print(f"\n[EXIT] Validation data saved to {val_data_dir}")
+            # print(f"Check tool call count with: grep '\\[TOOL CALLED\\]' logs/feedback_rl_*/training.log | wc -l")
+            # import sys
+            # sys.exit(0)  # Exit after validation for analysis
+
         for key_info, lst in reward_extra_infos_dict.items():
             assert len(lst) == 0 or len(lst) == len(sample_scores), f"{key_info}: {len(lst)=}, {len(sample_scores)=}"
 
@@ -656,6 +758,12 @@ class RayPPOTrainer:
             metric_dict["val-aux/num_turns/min"] = sample_turns.min()
             metric_dict["val-aux/num_turns/max"] = sample_turns.max()
             metric_dict["val-aux/num_turns/mean"] = sample_turns.mean()
+
+        # Add feedback metrics in separate "feedback" panel
+        if hasattr(self, '_last_val_data_dir'):
+            feedback_metrics = self._compute_feedback_metrics(self._last_val_data_dir)
+            for metric_name, metric_val in feedback_metrics.items():
+                metric_dict[f"feedback/{metric_name}"] = metric_val
 
         return metric_dict
 
@@ -988,6 +1096,7 @@ class RayPPOTrainer:
         # perform validation before training
         # currently, we only support validation using the reward_function.
         if self.val_reward_fn is not None and self.config.trainer.get("val_before_train", True):
+            # breakpoint()
             val_metrics = self._validate()
             assert val_metrics, f"{val_metrics=}"
             pprint(f"Initial validation metrics: {val_metrics}")

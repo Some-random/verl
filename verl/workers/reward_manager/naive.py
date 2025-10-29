@@ -40,8 +40,12 @@ class NaiveRewardManager(AbstractRewardManager):
         """
         self.tokenizer = tokenizer  # Store the tokenizer for decoding token IDs
         self.num_examine = num_examine  # the number of batches of decoded responses to print to the console
-        self.compute_score = compute_score or default_compute_score
+        self.compute_score_fn = compute_score or default_compute_score
         self.reward_fn_key = reward_fn_key  # Store the key for accessing the data source
+
+    def compute_score(self, data: DataProto, return_dict: bool = True) -> dict[str, Any]:
+        """Method called by Ray workers - wraps __call__"""
+        return self.__call__(data, return_dict=return_dict)
 
     def __call__(self, data: DataProto, return_dict: bool = False) -> torch.Tensor | dict[str, Any]:
         """We will expand this function gradually based on the available datasets"""
@@ -84,11 +88,12 @@ class NaiveRewardManager(AbstractRewardManager):
             num_turns = data_item.non_tensor_batch.get("__num_turns__", None)
             rollout_reward_scores = data_item.non_tensor_batch.get("reward_scores", {})
             num_tool_calls = data_item.non_tensor_batch.get("num_tool_calls", 0)
+
             extra_info["num_turns"] = num_turns
             extra_info["rollout_reward_scores"] = rollout_reward_scores
             extra_info["num_tool_calls"] = num_tool_calls
 
-            score = self.compute_score(
+            score = self.compute_score_fn(
                 data_source=data_source,
                 solution_str=response_str,
                 ground_truth=ground_truth,

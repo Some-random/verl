@@ -4,8 +4,8 @@ tools:
       # vLLM server configuration - supports multiple servers for load balancing
       # Requests are randomly distributed across all servers for faster feedback generation
       vllm_url:
-        - "http://h03:1233/v1/chat/completions"
-        - "http://h02:1233/v1/chat/completions"
+        - "http://h12:1233/v1/chat/completions"
+        - "http://h15:1233/v1/chat/completions"
       feedback_model: "meta-llama/Llama-4-Scout-17B-16E-Instruct"
       temperature: 0.0  # feedback_temp = 0.0 from Self-InPerfect
       max_tokens: 8192  # Increased to match max_tool_response_length and allow complete explanations

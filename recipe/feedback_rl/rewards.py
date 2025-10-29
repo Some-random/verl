@@ -13,7 +13,7 @@ from recipe.feedback_rl.feedback_utils import (
 )
 
 
-def compute_feedback_reward(data_source: str, solution_str: str, ground_truth: str, extra_info: dict) -> dict:
+def compute_feedback_reward(data_source: str, solution_str: str, ground_truth: str, extra_info: dict, **kwargs) -> dict:
     """
     Compute reward for feedback RL training.
 
@@ -22,6 +22,7 @@ def compute_feedback_reward(data_source: str, solution_str: str, ground_truth: s
         solution_str: Model's final response
         ground_truth: Correct answer
         extra_info: Additional info including number of feedback turns
+        **kwargs: Additional arguments from VERL (reward_router_address, reward_model_tokenizer, etc.)
 
     Returns:
         Dict with score, accuracy, and prediction

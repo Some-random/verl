@@ -517,6 +517,19 @@ class AgentLoopWorkerBase:
                     extra_fields[key] = np.array([val], dtype=object)
 
                 non_tensor_batch.update(extra_fields)
+
+                # CRITICAL FIX: Add num_tool_calls to extra_info for reward function
+                # The reward function expects num_tool_calls inside extra_info dict
+                if "extra_info" in non_tensor_batch:
+                    num_tool_calls = output.extra_fields.get("num_tool_calls", 0)
+                    # extra_info is a numpy array containing the dict
+                    if isinstance(non_tensor_batch["extra_info"], np.ndarray):
+                        extra_info_dict = non_tensor_batch["extra_info"][0]
+                    else:
+                        extra_info_dict = non_tensor_batch["extra_info"]
+                    extra_info_dict["num_tool_calls"] = num_tool_calls
+                    non_tensor_batch["extra_info"] = np.array([extra_info_dict], dtype=object)
+
                 data = DataProto(
                     batch=batch,
                     non_tensor_batch=non_tensor_batch,
